@@ -19,16 +19,23 @@ package io.galeb.validate.uproxy;
  */
 
 
+import io.galeb.core.loadbalance.LoadBalancePolicy.Algorithm;
+import io.galeb.core.model.Backend;
+import io.galeb.core.model.BackendPool;
+import io.galeb.core.model.Farm;
+import io.galeb.core.model.Rule;
+import io.galeb.core.model.VirtualHost;
+import io.galeb.undertow.handlers.BackendProxyClient;
 import io.undertow.Undertow;
 import io.undertow.server.handlers.ResponseCodeHandler;
-import io.undertow.server.handlers.proxy.ExclusivityChecker;
-import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
+import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
-import io.undertow.util.Headers;
 import org.xnio.Options;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ReverseProxyServer {
 
@@ -42,6 +49,7 @@ public class ReverseProxyServer {
     private static final int    BACKLOG                 = Integer.parseInt(System.getProperty("server.backlog", "1000"));
     private static final boolean REWRITE_HOST_HEADER    = Boolean.valueOf(System.getProperty("server.rewriteHostHeader", Boolean.toString(false)));
     private static final boolean REUSE_X_FORWARDED      = Boolean.valueOf(System.getProperty("server.reuseXForwarded", Boolean.toString(true)));
+    private static final String LB_POLICY               = System.getProperty("server.loadBalancePolicy", Algorithm.ROUNDROBIN.toString());
 
     public static void main(final String[] args) {
 
@@ -56,18 +64,21 @@ public class ReverseProxyServer {
                 "server.workerTaskMaxThreads, default: server.workerThreads\n" +
                 "server.backlog,              default: 1000\n" +
                 "server.rewriteHostHeader,    default: false\n" +
-                "server.reuseXForwarded,      default: true"
+                "server.reuseXForwarded,      default: true\n" +
+                "server.loadBalancePolicy,    default: RoundRobin"
             );
             System.exit(0);
         }
 
         try {
-            final ExclusivityChecker exclusivityChecker = exchange -> {
-                // we always create a new connection for upgrade requests
-                return exchange.getRequestHeaders().contains(Headers.UPGRADE);
-            };
+            Farm farm = newFarm();
 
-            LoadBalancingProxyClient loadBalancer = new LoadBalancingProxyClient(exclusivityChecker)
+            Map<String, Object> params = new HashMap<>();
+            params.put(BackendPool.PROP_LOADBALANCE_POLICY, LB_POLICY);
+            params.put(Farm.class.getSimpleName(), farm);
+
+            ProxyClient loadBalancer = new BackendProxyClient()
+                    .setParams(params)
                     .addHost(new URI(BACKEND_URI))
                     .setConnectionsPerThread(CONNECTIONS_PER_THREAD);
 
@@ -85,6 +96,28 @@ public class ReverseProxyServer {
         } catch (URISyntaxException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static Farm newFarm() {
+        Farm farm = new Farm();
+        VirtualHost virtualHost = new VirtualHost();
+        virtualHost.setId("vh1");
+        Rule rule = new Rule();
+        rule.setId("rule1");
+        rule.setParentId(virtualHost.getId());
+        virtualHost.addRule(rule.getId());
+        BackendPool backendPool = new BackendPool();
+        backendPool.setId("pool1");
+        rule.getProperties().put(Rule.PROP_TARGET_ID, backendPool.getId());
+        Backend backend = new Backend();
+        backend.setId(BACKEND_URI);
+        backend.setParentId(backendPool.getId());
+        backendPool.addBackend(backend.getId());
+        farm.add(virtualHost);
+        farm.add(backendPool);
+        farm.add(backend);
+        farm.add(rule);
+        return farm;
     }
 
 }

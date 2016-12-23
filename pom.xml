@@ -15,6 +15,16 @@
 
     <dependencies>
         <dependency>
+            <groupId>io.galeb</groupId>
+            <artifactId>galeb-core</artifactId>
+            <version>3.2.11-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.galeb</groupId>
+            <artifactId>galeb-undertow</artifactId>
+            <version>3.2.11-SNAPSHOT</version>
+        </dependency>
+        <dependency>
             <groupId>io.undertow</groupId>
             <artifactId>undertow-core</artifactId>
             <version>${undertow.version}</version>
