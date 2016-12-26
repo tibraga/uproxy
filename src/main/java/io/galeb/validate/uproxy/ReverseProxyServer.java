@@ -41,7 +41,7 @@ public class ReverseProxyServer {
 
     private static final String BACKEND_URI             = System.getProperty("client.backend", "http://127.0.0.1:80");
     private static final int    ROUTER_PORT             = Integer.parseInt(System.getProperty("server.port", "8000"));
-    private static final int    MAX_REQUEST_TIME        = Integer.parseInt(System.getProperty("server.maxRequestTime", "30000"));
+    private static final int    MAX_REQUEST_TIME        = Integer.parseInt(System.getProperty("client.maxRequestTime", "30000"));
     private static final int    CONNECTIONS_PER_THREAD  = Integer.parseInt(System.getProperty("client.connectionsPerThread", "20"));
     private static final int    IO_THREADS              = Integer.parseInt(System.getProperty("server.ioThread", "4"));
     private static final int    WORKER_THREADS          = Integer.parseInt(System.getProperty("server.workerThreads", Integer.toString(Runtime.getRuntime().availableProcessors()*8)));
@@ -57,7 +57,7 @@ public class ReverseProxyServer {
             System.out.println(
                 "client.backend,              default: http://127.0.0.1:80\n" +
                 "server.port,                 default: 8000\n" +
-                "server.maxRequestTime,       default: 30000\n" +
+                "client.maxRequestTime,       default: 30000\n" +
                 "client.connectionsPerThread, default: 20\n" +
                 "server.ioThread,             default: 4\n" +
                 "server.workerThreads,        default: Runtime.getRuntime().availableProcessors()*8\n" +
