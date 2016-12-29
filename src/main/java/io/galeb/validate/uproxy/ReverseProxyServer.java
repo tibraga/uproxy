@@ -25,11 +25,20 @@ import io.galeb.core.model.BackendPool;
 import io.galeb.core.model.Farm;
 import io.galeb.core.model.Rule;
 import io.galeb.core.model.VirtualHost;
+import io.galeb.core.util.Constants;
+import io.galeb.undertow.handlers.AccessLogExtendedHandler;
 import io.galeb.undertow.handlers.BackendProxyClient;
+import io.galeb.undertow.handlers.PathGlobHandler;
+import io.galeb.undertow.model.FarmUndertow;
 import io.undertow.Undertow;
+import io.undertow.server.HttpHandler;
+import io.undertow.server.handlers.NameVirtualHostHandler;
 import io.undertow.server.handlers.ResponseCodeHandler;
+import io.undertow.server.handlers.accesslog.AccessLogReceiver;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.spi.ExtendedLogger;
 import org.xnio.Options;
 
 import java.net.URI;
@@ -50,6 +59,8 @@ public class ReverseProxyServer {
     private static final boolean REWRITE_HOST_HEADER    = Boolean.valueOf(System.getProperty("server.rewriteHostHeader", Boolean.toString(false)));
     private static final boolean REUSE_X_FORWARDED      = Boolean.valueOf(System.getProperty("server.reuseXForwarded", Boolean.toString(true)));
     private static final String LB_POLICY               = System.getProperty("server.loadBalancePolicy", Algorithm.ROUNDROBIN.toString());
+    private static final String VIRTUALHOST             = System.getProperty("client.virtualhost", "local.domain.com");
+
 
     public static void main(final String[] args) {
 
@@ -65,10 +76,27 @@ public class ReverseProxyServer {
                 "server.backlog,              default: 1000\n" +
                 "server.rewriteHostHeader,    default: false\n" +
                 "server.reuseXForwarded,      default: true\n" +
-                "server.loadBalancePolicy,    default: RoundRobin"
+                "server.loadBalancePolicy,    default: RoundRobin\n" +
+                "client.virtualhost,          default: local.domain.com"
             );
             System.exit(0);
         }
+
+        System.out.println(
+                "client.backend,              " + BACKEND_URI + "\n" +
+                "server.port,                 " + ROUTER_PORT + "\n" +
+                "client.maxRequestTime,       " + MAX_REQUEST_TIME + "\n" +
+                "client.connectionsPerThread, " + CONNECTIONS_PER_THREAD + "\n" +
+                "server.ioThread,             " + IO_THREADS + "\n" +
+                "server.workerThreads,        " + WORKER_THREADS + "\n" +
+                "server.workerTaskMaxThreads, " + WORKER_TASK_MAX_THREADS + "\n" +
+                "server.backlog,              " + BACKLOG + "\n" +
+                "server.rewriteHostHeader,    " + REWRITE_HOST_HEADER + "\n" +
+                "server.reuseXForwarded,      " + REUSE_X_FORWARDED + "\n" +
+                "server.loadBalancePolicy,    " + LB_POLICY + "\n" +
+                "server.loadBalancePolicy,    " + VIRTUALHOST
+        );
+
 
         try {
             Farm farm = newFarm();
@@ -77,18 +105,66 @@ public class ReverseProxyServer {
             params.put(BackendPool.PROP_LOADBALANCE_POLICY, LB_POLICY);
             params.put(Farm.class.getSimpleName(), farm);
 
+            //Init the galeb's proxy client
             ProxyClient loadBalancer = new BackendProxyClient()
-                    .setParams(params)
                     .addHost(new URI(BACKEND_URI))
+                    .setMaxQueueSize(0)
+                    .setSoftMaxConnectionsPerThread(5)
+                    .setProblemServerRetry(10)
+                    .setTtl(-1)
+                    .addSessionCookieName("JSESSIONID")
                     .setConnectionsPerThread(CONNECTIONS_PER_THREAD);
 
+            //Init the proxy handler default
+            HttpHandler proxyHandler = new ProxyHandler(loadBalancer, MAX_REQUEST_TIME, ResponseCodeHandler.HANDLE_500, REWRITE_HOST_HEADER, REUSE_X_FORWARDED);
+
+            //Init the path handler of galeb
+            final HttpHandler pathHandler = new PathGlobHandler();
+            Rule rule = new Rule();
+            Map<String, Object> mapProperties = new HashMap<String, Object>();
+            mapProperties.put("ruleType", "UriPath");
+            mapProperties.put("match", "/");
+            mapProperties.put("orderNum", "1");
+            mapProperties.put("default", "false");
+            mapProperties.put("targetType", "BackendPool");
+
+            rule.setProperties(mapProperties);
+            ((PathGlobHandler)pathHandler).addRule(rule, proxyHandler);
+            ((PathGlobHandler)pathHandler).setDefaultHandler(proxyHandler);
+
+            //Init the Name Virtual Host Handler
+            NameVirtualHostHandler virtualHostHandler = new NameVirtualHostHandler();
+            virtualHostHandler.setDefaultHandler(ResponseCodeHandler.HANDLE_500);
+            virtualHostHandler.addHost(VIRTUALHOST, pathHandler);
+
+            //Init the AccessLog of galeb
+            final String LOGPATTERN = "%a\t%v\t%r\t-\t-\tLocal:\t%s\t*-\t%B\t%D\tProxy:\t"+ AccessLogExtendedHandler.REAL_DEST +"\t%s\t-\t%b\t-\t-"+
+                    "\tAgent:\t%{i,User-Agent}\tFwd:\t%{i,X-Forwarded-For}";
+
+            final AccessLogReceiver accessLogReceiver  = new AccessLogReceiver() {
+                private final ExtendedLogger logger =
+                        LogManager.getContext().getLogger(Constants.SysProp.PROP_ENABLE_ACCESSLOG.toString());
+
+                @Override
+                public void logMessage(String message) {
+                    logger.info(message);
+                }
+            };
+
+            AccessLogExtendedHandler root = new AccessLogExtendedHandler(virtualHostHandler,
+                            accessLogReceiver,
+                            LOGPATTERN,
+                            FarmUndertow.class.getClassLoader())
+                            .setMaxRequestTime(0);
+
+            //Init the Undertow
             Undertow reverseProxy = Undertow.builder()
                     .addHttpListener(ROUTER_PORT, "0.0.0.0")
                     .setIoThreads(IO_THREADS)
                     .setWorkerThreads(WORKER_THREADS)
                     .setWorkerOption(Options.WORKER_TASK_MAX_THREADS, WORKER_TASK_MAX_THREADS)
                     .setSocketOption(Options.BACKLOG, BACKLOG)
-                    .setHandler(new ProxyHandler(loadBalancer, MAX_REQUEST_TIME, ResponseCodeHandler.HANDLE_404, REWRITE_HOST_HEADER, REUSE_X_FORWARDED))
+                    .setHandler(root)
                     .build();
 
             reverseProxy.start();
