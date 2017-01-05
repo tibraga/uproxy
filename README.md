@@ -41,3 +41,5 @@ After some minutes running, the log of undertow will show in the console:
 `
 
 This exception will show some times in the console before stop receive packages in the tcpdump.
+
+Note that just the wrk in execution will stop send request to uproxy, but, if you open new console for new execution of wrk, it will work up until stop again.
