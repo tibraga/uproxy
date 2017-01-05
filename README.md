@@ -2,9 +2,9 @@
 
 _Servers necessaries:_
 
-1 server nginx
-1 server with this project, java and maven installed
-1 server with wrk installed
+- 1 server nginx
+- 1 server with this project, java and maven installed
+- 1 server with wrk installed
 
 _On the server nginx:_
 
