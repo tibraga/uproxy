@@ -32,7 +32,7 @@ On the server with this project, run tcpdump for watch the packages on the port 
 After some minutes running, the log of undertow will show in the console:
 
 `java.io.IOException: UT001000: Connection closed
-       	at io.undertow.client.http.HttpClientConnection$ClientReadListener.handleEvent(HttpClientConnection.java:531)
+       	at io.undertow.client.http.HttpClientConnection$ClientReadListener.handleEvent(HttpClientConnection.java:517)
        	at io.undertow.client.http.HttpClientConnection$ClientReadListener.handleEvent(HttpClientConnection.java:473)
        	at org.xnio.ChannelListeners.invokeChannelListener(ChannelListeners.java:92)
        	at org.xnio.conduits.ReadReadyHandler$ChannelListenerHandler.readReady(ReadReadyHandler.java:66)
